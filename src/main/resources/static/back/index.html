@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>云盘</title>
+    <style type="text/css">
+        * {
+            font-size: 14px;
+        }
+        #app{
+            width: 1300px;
+            margin: 0 auto;
+        }
+        #left{
+            width: 300px;
+            float: left;
+            overflow: scroll;
+            height: 500px;
+        }
+        #center{
+            width: 800px;
+            float: right;
+        }
+    </style>
+</head>
+<div id="app">
+    <div id="left">
+        {{hdfsInfo}}
+    </div>
+    <div id="center">
+
+
+    欢迎您:{{uname}}  <a href="" @click="logout()">退出</a>
+    <hr/>
+    <form action="upload.do" enctype="multipart/form-data"method="get">
+        <input type="file" name="myfile" ref="myfile"/>
+        <input type="button" value="文件上传" @click="uploadData()"/>
+    </form>
+    <input type="button" value="新建目录" @click="mkdir()"/>
+</hr>
+    <a @click="goRoot()">返回根目录</a>
+    <a @click="goUp">返回上一级</a>
+当前路径为：<span id="pathDiv":data="currentPath"><a  @click="show('{{currentPath}}')">{{currentPath}}</a></span>
+<span id="fileCount">{{totals}}</span>个
+<hr/>
+    <input type="button" value="图片" @click="selectFile(1)"/>
+    <input type="button"value="文档" @click="selectFile(2)"/>
+    <input type="button"value="视频" @click="selectFile(3)"/>
+    <input type="button"value="音乐" @click="selectFile(4)"/>
+    <input type="button"value="所有" @click="selectFile(5)"/>
+<hr/>
+
+<table width="80%" border="1">
+    <thead>
+    <tr>
+        <td>文件名</td>
+        <td>类型</td>
+        <td>大小</td>
+        <td>复本数</td>
+        <td>最后修改时间</td>
+        <td>权限</td>
+        <td>创建者</td>
+        <td>组</td>
+        <td>操作</td>
+    </tr>
+    </thead>
+    <tbody id="content">
+    <tr v-for="(item,index) in fileStatus">
+        <td><span style="color:#ff0000" @click="show(item.relativePath,item.isFile)">{{item.fileName}}</span></td>
+        <td>{{item.isFile=='false'?'目录':'文件'}}</td>
+        <td>{{item.size}}</td>
+        <td>{{item.duplicates}}</td>
+        <td>{{item.modifyTime}}</td>
+        <td>{{item.rights}}</td>
+        <td>{{item.owner}}</td>
+        <td>{{item.group}}</td>
+        <td :data="item.filePath">
+        <a @click="deleteItem(item,index)">删除</a>
+        <a @click="rename(item,index)">重命名</a>
+        <a @click="moveTo1(item,index)">移动</a>
+        <a @click="copyTo(item,index)">复制</a>
+        <a @click="downLoad(item,index)">下载</a>
+        </td>
+    </tr>
+    </tbody>
+    <tfoot>
+    <tr>
+        <td colspan="9">{{totals}}</td>
+    </tr>
+    </tfoot>
+</table>
+    </div>
+</div>
+
+<script src="../js/vue.js"></script>
+<script src="../js/axios.js"></script>
+<script>
+    let vm=new Vue({
+        el:"#app",
+        data: {
+            uname:'',
+            currentPath:'/',
+            fileStatus:[],
+            flieCount:0,
+            directoryCount:0,
+            parentPath:'/',
+            hdfsInfo:'',
+
+        },
+        methods: {
+            mkdir:function () {
+                let newName=prompt("请输入目录名");
+                if (newName==null||newName==''){
+                    return;
+                }
+                if (newName.indexOf("/")!=-1){
+                    alert("只能在当前创建")
+                        return;
+                    }
+                    let params=new URLSearchParams();
+                    params.append("path",this.currentPath);
+                    params.append("newName",newName);
+                    axios.post("hdfs/mkdir.action",params).then(response=>{
+                        this.fileStatus.push(response.data.obj);
+                    })
+                },
+            downLoad:function (item,index) {
+                let elemIF = document.createElement('iframe')
+                if (item.isFile == 'true') {
+
+                elemIF.src = 'hdfs/downLoadFile.action?fileName=' + item.fileName + "&path=" + item.relativePath;
+                    }else if(item.isFile=='false'){
+                    elemIF.src = 'hdfs/downloadDirectory.action?fileName=' + item.fileName + "&path=" + item.relativePath;
+                }
+                    elemIF.style.display='none';
+                    document.body.appendChild(elemIF);
+
+            },
+            moveTo1:function (item,index) {
+                let newName=prompt("请输入目标位置",item.relativePath);
+                if (newName==null||newName==''){
+                    return;
+                }
+                let params=new  URLSearchParams();
+                params.append("parentPath",this.currentPath);
+                params.append("path",item.filePath);
+                params.append("newName",newName);
+                axios.post('hdfs/moveTo.action',params).then(response=>{
+                    if (response.data.code==1){
+                        if (response.data.obj=='undefined'||response.data.obj==null){
+                            this.fileStatus=[];
+                        }else{
+                            this.fileStatus=response.data.obj;
+                        }
+                    }
+                })
+            },
+            copyTo:function (item,index) {
+                let newName=prompt("请输入复制后要保存的位置",item.relativePath);
+                if (newName==null||newName==''){
+                    return;
+                }
+                let params=new  URLSearchParams();
+                params.append("parentPath",this.currentPath);
+                params.append("path",item.filePath);
+                params.append("newName",newName);
+                axios.post('hdfs/copyTo.action',params).then(response=>{
+                    if (response.data.code==1){
+                        if (response.data.obj=='undefined'||response.data.obj==null){
+                            this.fileStatus=[];
+                        }else{
+                            this.fileStatus=response.data.obj;
+                        }
+                    }
+                })
+            },
+            goRoot:function () {
+                this.parentPath='/';
+                this.currentPath=this.parentPath;
+                this.listFile(this.currentPath);
+            },
+            goUp:function () {
+                if (this.currentPath=='/'||this.parentPath==''){
+                    this.goRoot();
+                    return;
+                }
+                var temp=this.parentPath;
+                this.currentPath=this.parentPath;
+                var  index=this.parentPath.lastIndexOf("/");
+                this.parentPath=this.parentPath.substring(0,index);
+                this.listFile(temp);
+
+            },
+            listFile:function (path) {
+                let params=new URLSearchParams();
+                params.append("path",path);
+                axios.post('hdfs/listFile',params).then(response=>{
+                    this.handleResponse(response);
+                });
+
+            },
+            checkLogin:function () {
+                return axios.get("checkLogin");
+            },
+            logout:function () {
+                let params=new URLSearchParams();
+                axios.post('../logout.action',params).then(response=>{
+                    console.log(response.data.code);
+                    if(response.data.code==1){
+                        alert('安全退出');
+                        window.location.href='login.html';
+                    }
+                });
+
+            },
+            show:function (path,isFile) {
+                if (isFile=='true'){
+                    alert(path+'是文件');
+                    return;
+                }
+                this.parentPath=this.currentPath;
+                this.currentPath=path;
+                this.listFile(this.currentPath);
+
+            },
+            handleResponse:function (response) {
+                if (response.data.code==1){
+                    if (response.data.obj=='undefined'||response.data.obj==null){
+                        this.fileStatus=[];
+                        return;
+                    }
+                    this.fileStatus=response.data.obj;
+                }
+            },
+
+            init1:function (path) {
+                let params=new URLSearchParams();
+                params.append("path",path);
+                return axios.post('hdfs/listFile',params);
+
+            },
+            deleteItem:function (item,index) {
+                let r=confirm("您确认删除？");
+                if (!r){
+                    return;
+                }
+                let params=new URLSearchParams();
+                params.append("path",item.filePath);
+
+                    axios.post('hdfs/deleteItem.action',params).then(response=>{
+                        if (response.data.code==1){
+                            this.fileStatus.splice(index,1);
+                        }
+                    });
+            },
+            rename:function (item,index) {
+                let newName=prompt("请输入新的文件名称",item.fileName);
+                if (newName==null||newName==''){
+                    return;
+                }
+                let params=new URLSearchParams();
+                params.append("oldPath",item.filePath);
+                params.append("newName",newName);
+                axios.post('hdfs/rename.action',params).then(response=>{
+                    if (response.data.code==1){
+                        this.fileStatus.splice(index,1,response.data.obj);
+                    }
+                });
+            },
+            selectFile:function (type) {
+                this.currentPath='/';
+                this.parentPath='/';
+                let params=new URLSearchParams();
+                params.append("type",type);
+                axios.post('hdfs/listFileByType',params).then(response=>{
+                    this.handleResponse(response);
+                });
+
+            },
+            uploadData:function () {
+                let myfile=this.$refs.myfile;
+                let files=myfile.files;
+                let file=files[0];
+                var formData =new FormData();
+                formData.append("file",file);
+                formData.append("currentPath",this.currentPath);
+                this.uploadFileRequest("hdfs/uploadData.action",formData).then(response=>{
+                    if (response.data.code==1){
+                        if (response.data.code=='undefined'||response.data.obj==null){
+                            this.fileStatus=[];
+
+                        }else {
+                            this.fileStatus=response.data.obj;
+                        }
+                    }
+                })
+
+            },
+            uploadFileRequest:function (url,params) {
+                return axios({
+                    method:'post',
+                    url:url,
+                    data: params,
+                    headers:{
+                        'Content-Type': 'multipart/form-data'
+                    }
+                });
+
+            },
+            getHdfsInfo:function () {
+                let params=new URLSearchParams();
+                axios.post('hdfs/getHdfsInfo.action',params).then(response=>{
+                    if (response.data.code==1){
+                        this.hdfsInfo=response.data.obj;
+                    }
+                });
+
+            }
+
+        },
+        mounted:function () {
+            axios.all(  [this.checkLogin(),this.init1('/'),this.getHdfsInfo()]  )
+            .then(axios.spread((d1,d2) =>{
+                if (d1.data.code == 0){
+                    alert('未登录');
+                    window.location.href='../login.html';
+                    return;
+                }
+                this.uname= d1.data.obj;
+
+                if(d2.data.code==1){
+                    this.fileStatus=d2.data.obj;
+                }
+            }));
+        },
+        computed:{
+            totals:function () {
+                this.flieCount=0;
+                this.directoryCount=0;
+                if (this.fileStatus!=null&&this.fileStatus.length>0){
+                    for (let i=0;i<this.fileStatus.length;i++){
+                        let  ff=this.fileStatus[i];
+                        if (ff.isFile =='false' ){
+                            this.directoryCount++;
+                        }else {
+                            this.flieCount++;
+                        }
+                    }
+                }
+                return"总文件数"+this.fileStatus.length+",其中文件有:"+this.flieCount+"个，目录有:"+this.directoryCount;
+
+            }
+        }
+    });
+</script>
+</body>
+</html>
